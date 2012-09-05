@@ -36,21 +36,23 @@
 # policies, either expressed or implied, of Vincent Driessen.
 #
 
-require_git_repo
-require_gitflow_initialized
-gitflow_load_settings
-PREFIX=$(git config --get gitflow.prefix.feature)
+init() {
+  require_git_repo
+  require_gitflow_initialized
+  gitflow_load_settings
+  PREFIX=$(git config --get gitflow.prefix.feature)
+}
 
 usage() {
 	echo "usage: git flow feature [list] [-v]"
 	echo "       git flow feature start [-F] <name> [<base>]"
-	echo "       git flow feature finish [-rFk] [<name|nameprefix>]"
+	echo "       git flow feature finish [-rFkDS] [<name|nameprefix>]"
 	echo "       git flow feature publish <name>"
 	echo "       git flow feature track <name>"
 	echo "       git flow feature diff [<name|nameprefix>]"
 	echo "       git flow feature rebase [-i] [<name|nameprefix>]"
 	echo "       git flow feature checkout [<name|nameprefix>]"
-	echo "       git flow feature pull <remote> [<name>]"
+	echo "       git flow feature pull [-r] <remote> [<name>]"
 }
 
 cmd_default() {
@@ -231,6 +233,8 @@ cmd_finish() {
 	DEFINE_boolean fetch false "fetch from $ORIGIN before performing finish" F
 	DEFINE_boolean rebase false "rebase instead of merge" r
 	DEFINE_boolean keep false "keep branch after performing finish" k
+	DEFINE_boolean force_delete false "force delete feature branch after finish" D
+	DEFINE_boolean squash false "squash feature during merge" S
 	parse_args "$@"
 	expand_nameprefix_arg_or_current
 
@@ -311,7 +315,13 @@ cmd_finish() {
 	if [ "$(git rev-list -n2 "$DEVELOP_BRANCH..$BRANCH" | wc -l)" -eq 1 ]; then
 		git merge --ff "$BRANCH"
 	else
-		git merge --no-ff "$BRANCH"
+		if noflag squash; then
+		    git merge --no-ff "$BRANCH"
+		else
+			git merge --squash "$BRANCH"
+			git commit
+			git merge "$BRANCH"
+		fi
 	fi
 
 	if [ $? -ne 0 ]; then
@@ -346,7 +356,11 @@ helper_finish_cleanup() {
 	
 	
 	if noflag keep; then
-		git branch -d "$BRANCH"
+		if flag force_delete; then
+			git branch -D "$BRANCH"
+		else
+			git branch -d "$BRANCH"
+		fi
 	fi
 
 	echo
@@ -470,6 +484,7 @@ avoid_accidental_cross_branch_action() {
 
 cmd_pull() {
 	#DEFINE_string prefix false 'alternative remote feature branch name prefix' p
+	DEFINE_boolean rebase false "pull with rebase" r
 	parse_remote_name "$@"
 
 	if [ -z "$REMOTE" ]; then
@@ -495,7 +510,15 @@ cmd_pull() {
 
 		# we already have a local branch called like this, so simply pull the
 		# remote changes in
-		git pull -q "$REMOTE" "$BRANCH" || die "Failed to pull from remote '$REMOTE'."
+		if flag rebase; then
+			if ! git pull --rebase -q "$REMOTE" "$BRANCH"; then
+				warn "Pull was aborted. There might be conflicts during rebase or '$REMOTE' might be inaccessible."
+				exit 1
+			fi
+		else
+			git pull -q "$REMOTE" "$BRANCH" || die "Failed to pull from remote '$REMOTE'."
+		fi
+
 		echo "Pulled $REMOTE's changes into $BRANCH."
 	else
 		# setup the local branch clone for the first time

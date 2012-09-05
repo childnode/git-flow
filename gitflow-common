@@ -45,7 +45,7 @@ warn() { echo "$@" >&2; }
 die() { warn "$@"; exit 1; }
 
 escape() {
-	echo "$1" | sed 's/\([\.\+\$\*]\)/\\\1/g'
+	echo "$1" | sed 's/\([\.\$\*]\)/\\\1/g'
 }
 
 # set logic
@@ -95,6 +95,10 @@ git_repo_is_headless() {
 
 git_local_branch_exists() {
 	has $1 $(git_local_branches)
+}
+
+git_remote_branch_exists() {
+	has $1 $(git_remote_branches)
 }
 
 git_branch_exists() {
